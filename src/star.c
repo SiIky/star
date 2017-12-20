@@ -14,6 +14,8 @@
  * <string.h>
  *  memcmp()
  *  memset()
+ *  strcmp()
+ *  strlen()
  */
 #include <stdbool.h>
 #include <stdio.h>
@@ -24,11 +26,12 @@
 
 #define ifjmp(COND, LBL) if (COND) goto LBL
 
-const unsigned char MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
+const u8 MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
 
 /*
  * utility functions
  */
+
 bool star_check_header (const struct star_file * self)
 {
     return (self != NULL) ?
@@ -36,15 +39,29 @@ bool star_check_header (const struct star_file * self)
         false ;
 }
 
+int star_strcmp (const void * _l, const void * _r)
+{
+    const char * l = * (const char **) _l;
+    const char * r = * (const char **) _r;
+
+    /* `l.len == r.len` <=> `l.len - r.len == 0` */
+    int diff = strlen(l) - strlen(r);
+
+    /* `0` => `false` */
+    return (diff != 0) ?
+        diff :
+        strcmp(l, r);
+}
+
 void star_free (struct star_file * self)
 {
     if (self == NULL)
         return;
 
-    size_t n = self->header.nfiles;
+    u64 n = self->header.nfiles;
 
     if (self->fheaders != NULL) {
-        for (size_t i = 0; i < n; i++)
+        for (u64 i = 0; i < n; i++)
             if (self->fheaders[i].path != NULL)
                 free(self->fheaders[i].path);
 
@@ -52,7 +69,7 @@ void star_free (struct star_file * self)
     }
 
     if (self->fdata != NULL) {
-        for (size_t i = 0; i < n; i++)
+        for (u64 i = 0; i < n; i++)
             if (self->fdata[i] != NULL)
                 free(self->fdata[i]);
 
@@ -74,7 +91,7 @@ bool star_read_header (struct star_file * self, FILE * in)
     ifjmp(self == NULL, out);
     ifjmp(in == NULL, out);
 
-    size_t r = fread(&self->header, sizeof(struct star_header), 1, in);
+    u64 r = fread(&self->header, sizeof(struct star_header), 1, in);
     ifjmp(r != 1, out);
 
     ret = star_check_header(self);
@@ -83,15 +100,16 @@ out:
     return ret;
 }
 
-size_t star_read_fheaders (struct star_file * self, FILE * in)
+u64 star_read_fheaders (struct star_file * self, FILE * in)
 {
-    size_t ret = 0;
+    u64 ret = 0;
 
     ifjmp(self == NULL, out);
     ifjmp(in == NULL, out);
 
-    size_t nfiles = self->header.nfiles;
+    u64 nfiles = self->header.nfiles;
 
+    /* if fheaders already has memory, use it */
     struct star_file_header * fheaders = (self->fheaders == NULL) ?
         calloc(self->header.nfiles, sizeof(struct star_file_header)) :
         self->fheaders ;
@@ -107,10 +125,10 @@ size_t star_read_fheaders (struct star_file * self, FILE * in)
 
         { /* read `size,` `offset` and `path_len` */
             void * ptr = &tmp;
-            size_t size = sizeof(size_t);
-            size_t nmemb = 3;
+            u64 size = sizeof(u64);
+            u64 nmemb = 3;
 
-            size_t r = fread(ptr, size, nmemb, in);
+            u64 r = fread(ptr, size, nmemb, in);
 
             if (r != nmemb)
                 break;
@@ -125,9 +143,9 @@ size_t star_read_fheaders (struct star_file * self, FILE * in)
 
         { /* read path */
             void * ptr = tmp.path;
-            size_t size = sizeof(unsigned char);
-            size_t nmemb = tmp.path_len;
-            size_t r = fread(ptr, size, nmemb, in);
+            u64 size = sizeof(u8);
+            u64 nmemb = tmp.path_len;
+            u64 r = fread(ptr, size, nmemb, in);
 
             /* we alloc so we have to free in case of error */
             if (r != nmemb) {
@@ -145,28 +163,28 @@ out:
     return ret;
 }
 
-size_t star_read_fdata (struct star_file * self, FILE * in)
+u64 star_read_fdata (struct star_file * self, FILE * in)
 {
-    size_t ret = 0;
+    u64 ret = 0;
 
     ifjmp(self == NULL, out);
     ifjmp(in == NULL, out);
 
-    unsigned char ** fdata = (self->fdata == NULL) ?
-        calloc(self->header.nfiles, sizeof(unsigned char *)) :
+    u8 ** fdata = (self->fdata == NULL) ?
+        calloc(self->header.nfiles, sizeof(u8 *)) :
         self->fdata ;
     ifjmp(fdata == NULL, out);
 
     /* assume `fdata` has enough space */
     for (ret = 0; ret < self->header.nfiles; ret++) {
-        unsigned char * tmp = NULL;
+        u8 * tmp = NULL;
 
-        size_t size = self->fheaders[ret].size;
+        u64 size = self->fheaders[ret].size;
         tmp = malloc(size);
         if (tmp == NULL)
             break;
 
-        size_t r = fread(tmp, size, 1, in);
+        u64 r = fread(tmp, size, 1, in);
 
         /* we alloc so we have to free in case of error */
         if (r != 1) {
@@ -200,23 +218,23 @@ struct star_file * star_read (FILE * in)
     }
 
     /* number of successfully read file headers */
-    size_t nfheaders = star_read_fheaders(ret, in);
+    u64 nfheaders = star_read_fheaders(ret, in);
     ifjmp(ret->header.nfiles != nfheaders, ko_fheaders);
 
     /* number of successfully read files */
-    size_t nfdata = star_read_fdata(ret, in);
+    u64 nfdata = star_read_fdata(ret, in);
     ifjmp(ret->header.nfiles != nfdata, ko_fdata);
 
 out:
     return ret;
 
 ko_fdata:
-    for (size_t i = 0; i < nfdata; i++)
+    for (u64 i = 0; i < nfdata; i++)
         free(ret->fdata[i]);
     free(ret->fdata);
 
 ko_fheaders:
-    for (size_t i = 0; i < nfheaders; i++)
+    for (u64 i = 0; i < nfheaders; i++)
         free(ret->fheaders[i].path);
     free(ret->fheaders);
 
@@ -243,8 +261,8 @@ bool star_write (const struct star_file * self, FILE * out)
     ifjmp(self->fdata == NULL, out);
 
     /* assume both `self->fheaders` and `self->fdata` have the correct size */
-    for (size_t i = 0; i < self->header.nfiles; i++) {
-        ifjmp(self->fdata[i] == NULL, out); // BUG
+    for (u64 i = 0; i < self->header.nfiles; i++) {
+        ifjmp(self->fdata[i] == NULL, out);
         ifjmp(self->fheaders[i].path == NULL, out);
         ifjmp((strlen((void *) self->fheaders[i].path) + 1) != self->fheaders[i].path_len, out);
     }
@@ -257,24 +275,24 @@ bool star_write (const struct star_file * self, FILE * out)
                  out);
 
     /* write file headers */
-    for (size_t i = 0; i < self->header.nfiles; i++) {
+    for (u64 i = 0; i < self->header.nfiles; i++) {
         /* write `size`, `offset` and `path_len` */
         fwrite_ifjmp(self->fheaders + i,
-                     sizeof(size_t),
+                     sizeof(u64),
                      3,
                      out,
                      out);
 
         /* write `path` */
         fwrite_ifjmp(self->fheaders[i].path,
-                     sizeof(unsigned char),
+                     sizeof(u8),
                      self->fheaders[i].path_len,
                      out,
                      out);
     }
 
     /* write file data */
-    for (size_t i = 0; i < self->header.nfiles; i++)
+    for (u64 i = 0; i < self->header.nfiles; i++)
         fwrite_ifjmp(self->fdata[i],
                      self->fheaders[i].size,
                      1,
@@ -292,7 +310,7 @@ out:
 /*
  * create functions
  */
-struct star_file * star_new (size_t nfiles)
+struct star_file * star_new (u64 nfiles)
 {
     struct star_file _tmp;
     struct star_file * ret = NULL;
@@ -301,7 +319,7 @@ struct star_file * star_new (size_t nfiles)
 
     ifjmp(nfiles == 0, out);
 
-    _tmp.fdata = calloc(nfiles, sizeof(unsigned char *));
+    _tmp.fdata = calloc(nfiles, sizeof(u8 *));
     _tmp.fheaders = calloc(nfiles, sizeof(struct star_file_header));
     ret = malloc(sizeof(struct star_file));
 
@@ -330,10 +348,10 @@ ko:
     goto out;
 }
 
-bool star_add_file (struct star_file * self, size_t idx, const char * path, size_t size, FILE * in)
+bool star_add_file (struct star_file * self, u64 idx, const u8 * path, u64 size, FILE * in)
 {
     bool ret = false;
-    unsigned char * fdata = NULL;
+    u8 * fdata = NULL;
     struct star_file_header fheader;
     memset(&fheader, 0, sizeof(struct star_file_header));
 
@@ -346,12 +364,12 @@ bool star_add_file (struct star_file * self, size_t idx, const char * path, size
         fdata = malloc(size);
         ifjmp(fdata == NULL, out);
 
-        size_t r = fread(fdata, size, 1, in);
+        u64 r = fread(fdata, size, 1, in);
         ifjmp(r != 1, ko);
     }
 
     { /* path */
-        fheader.path = (void *) strdup(path);
+        fheader.path = (void *) strdup((void*) path);
         ifjmp(fheader.path == NULL, ko);
         fheader.path_len = strlen((void *) fheader.path) + 1;
     }
@@ -386,7 +404,7 @@ bool star_file_offsets (struct star_file * self)
 
     ifjmp(self == NULL, out);
 
-    size_t offset = 0;
+    u64 offset = 0;
 
     /*
      * offset from the beggining of the STAR file to the
@@ -396,16 +414,18 @@ bool star_file_offsets (struct star_file * self)
         offset += sizeof(struct star_header);
         offset += self->header.nfiles * sizeof(struct star_file_header);
 
-        for (size_t i = 0; i < self->header.nfiles; i++)
+        for (u64 i = 0; i < self->header.nfiles; i++)
             offset += self->fheaders[i].path_len;
 
-        offset -= self->header.nfiles * sizeof(unsigned char *);
+        /* subtract size of pointers */
+        offset -= self->header.nfiles * sizeof(u8 *);
     }
 
+    /* beggining of fdata */
     self->fheaders[0].offset = offset;
 
-    for (size_t i = 1; i < self->header.nfiles; i++)
-        self->fheaders[i].offset = self->fheaders[i - 1].offset;
+    for (u64 i = 1; i < self->header.nfiles; i++)
+        self->fheaders[i].offset = self->fheaders[i - 1].offset + self->fheaders[i - 1].size;
 
     ret = true;
 
