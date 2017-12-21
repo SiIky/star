@@ -39,75 +39,76 @@ bool star_check_header (const struct star_file * self)
         false ;
 }
 
-/**
- * This function works only on certain circumstances.
- *
- * # Use case:
- *
- * Given a directory tree similar to the following:
- *
- *   ```
- *   directory/
- *   ├── file1
- *   ├── file2
- *   ├── file3
- *   ├── file4
- *   ├── file5
- *   ├── file6
- *   ├── file7
- *   ├── file8
- *   ├── file9
- *   ├── file10
- *   └── file11
- *   ```
- *
- * and calling a `program` this way:
- *
- *   ```sh
- *   program directory/*
- *   ```
- *
- * `argv` will look like:
- *
- *   ```c
- *   argv = {
- *       [0]  = "program",
- *       [1]  = "directory/file1",
- *       [2]  = "directory/file10",
- *       [3]  = "directory/file11",
- *       [4]  = "directory/file2",
- *       [5]  = "directory/file3",
- *       [6]  = "directory/file4",
- *       [7]  = "directory/file5",
- *       [8]  = "directory/file6",
- *       [9]  = "directory/file7",
- *       [10] = "directory/file8",
- *       [11] = "directory/file9",
- *   }
- *   ```
- *
- * This isn't ideal if you want to process these files in
- * order.
- *
- * # Assumptions
- *
- * The strings to be compared are composed of common a
- * prefix and a number after that prefix (`pn`). It
- * doesn't matter what the prefix is.
- *
- * e.g.:
- *   pre1 < pre2 < pre10
- *
- * # Limitations
- *
- * The numbers aren't read nor compared as numbers, so the
- * same number with a different representation will not
- * give the correct order.
- *
- * e.g.:
- *   1 < 01 < 001
- *   2 < 01 < 000
- */
+#if 0
+This function works only on certain circumstances.
+
+# Use case:
+
+Given a directory tree similar to the following:
+
+  ```
+  directory/
+  ├── file1
+  ├── file2
+  ├── file3
+  ├── file4
+  ├── file5
+  ├── file6
+  ├── file7
+  ├── file8
+  ├── file9
+  ├── file10
+  └── file11
+  ```
+
+and calling a `program` this way:
+
+  ```sh
+  program directory/*
+  ```
+
+`argv` will look like:
+
+  ```c
+  argv = {
+      [0]  = "program",
+      [1]  = "directory/file1",
+      [2]  = "directory/file10",
+      [3]  = "directory/file11",
+      [4]  = "directory/file2",
+      [5]  = "directory/file3",
+      [6]  = "directory/file4",
+      [7]  = "directory/file5",
+      [8]  = "directory/file6",
+      [9]  = "directory/file7",
+      [10] = "directory/file8",
+      [11] = "directory/file9",
+  }
+  ```
+
+This isn't ideal if you want to process these files in
+order.
+
+# Assumptions
+
+The strings to be compared are composed of common a
+prefix and a number after that prefix (`pn`). It
+doesn't matter what the prefix is.
+
+e.g.:
+  pre1 < pre2 < pre10
+
+# Limitations
+
+The numbers aren't read nor compared as numbers, so the
+same number with a different representation will not
+give the correct order.
+
+e.g.:
+  1 < 01 < 001
+  2 < 01 < 000
+*/
+#endif
 int star_strcmp (const void * _l, const void * _r)
 {
     const char * l = * (const char **) _l;
