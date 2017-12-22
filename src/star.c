@@ -7,6 +7,7 @@
  *  fwrite()
  *
  * <stdlib.h>
+ *  bsearch()
  *  calloc()
  *  free()
  *  malloc()
@@ -16,6 +17,7 @@
  *  memset()
  *  strcmp()
  *  strlen()
+ *  strncmp()
  */
 #include <stdbool.h>
 #include <stdio.h>
@@ -25,6 +27,8 @@
 #include "star.h"
 
 #define ifjmp(COND, LBL) if (COND) goto LBL
+#define star_max(x, y) (((x) > (y)) ? (x) : (y))
+#define star_min(x, y) (((x) < (y)) ? (x) : (y))
 
 const u8 MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
 
@@ -39,88 +43,88 @@ bool star_check_header (const struct star_file * self)
         false ;
 }
 
-#if 0
-This function works only on certain circumstances.
-
-# Use case:
-
-Given a directory tree similar to the following:
-
-  ```
-  directory/
-  ├── file1
-  ├── file2
-  ├── file3
-  ├── file4
-  ├── file5
-  ├── file6
-  ├── file7
-  ├── file8
-  ├── file9
-  ├── file10
-  └── file11
-  ```
-
-and calling a `program` this way:
-
-  ```sh
-  program directory/*
-  ```
-
-`argv` will look like:
-
-  ```c
-  argv = {
-      [0]  = "program",
-      [1]  = "directory/file1",
-      [2]  = "directory/file10",
-      [3]  = "directory/file11",
-      [4]  = "directory/file2",
-      [5]  = "directory/file3",
-      [6]  = "directory/file4",
-      [7]  = "directory/file5",
-      [8]  = "directory/file6",
-      [9]  = "directory/file7",
-      [10] = "directory/file8",
-      [11] = "directory/file9",
-  }
-  ```
-
-This isn't ideal if you want to process these files in
-order.
-
-# Assumptions
-
-The strings to be compared are composed of common a
-prefix and a number after that prefix (`pn`). It
-doesn't matter what the prefix is.
-
-e.g.:
-  pre1 < pre2 < pre10
-
-# Limitations
-
-The numbers aren't read nor compared as numbers, so the
-same number with a different representation will not
-give the correct order.
-
-e.g.:
-  1 < 01 < 001
-  2 < 01 < 000
-*/
-#endif
+//
+// This function works only on certain circumstances.
+//
+// # Use case:
+//
+// Given a directory tree similar to the following:
+//
+//   ```
+//   directory/
+//   ├── file1
+//   ├── file2
+//   ├── file3
+//   ├── file4
+//   ├── file5
+//   ├── file6
+//   ├── file7
+//   ├── file8
+//   ├── file9
+//   ├── file10
+//   └── file11
+//   ```
+//
+// and calling a `program` this way:
+//
+//   ```sh
+//   program directory/*
+//   ```
+//
+// `argv` will look like:
+//
+//   ```c
+//   argv = {
+//       [0]  = "program",
+//       [1]  = "directory/file1",
+//       [2]  = "directory/file10",
+//       [3]  = "directory/file11",
+//       [4]  = "directory/file2",
+//       [5]  = "directory/file3",
+//       [6]  = "directory/file4",
+//       [7]  = "directory/file5",
+//       [8]  = "directory/file6",
+//       [9]  = "directory/file7",
+//       [10] = "directory/file8",
+//       [11] = "directory/file9",
+//   }
+//   ```
+//
+// This isn't ideal if you want to process these files in
+// order.
+//
+// # Assumptions
+//
+// The strings to be compared are composed of common a
+// prefix and a number after that prefix (`pn`). It
+// doesn't matter what the prefix is.
+//
+// e.g.:
+//   pre1 < pre2 < pre10
+//
+// # Limitations
+//
+// The numbers aren't read nor compared as numbers, so the
+// same number with a different representation will not
+// give the correct order.
+//
+// e.g.:
+//   1 < 01 < 001
+//   2 < 01 < 000
+//
 int star_strcmp (const void * _l, const void * _r)
 {
-    const char * l = * (const char **) _l;
-    const char * r = * (const char **) _r;
+    const char * l = _l;
+    const char * r = _r;
 
     /* `l.len == r.len` <=> `l.len - r.len == 0` */
-    int diff = strlen(l) - strlen(r);
+    size_t nl = strlen(l);
+    size_t nr = strlen(r);
+    int diff = nl - nr;
 
-    /* `0` => `false` */
-    return (diff != 0) ?
-        diff :
-        strcmp(l, r);
+    return (diff == 0) ?
+        strcmp(l, r) :
+        diff ;
 }
 
 void star_free (struct star_file * self)
@@ -317,11 +321,11 @@ ko_fheaders:
  * write functions (assume `out` was opened in write mode)
  */
 
+bool star_write (const struct star_file * self, FILE * out)
+{
 #define fwrite_ifjmp(PTR, SIZE, NMEMB, STREAM, LBL) \
     ifjmp((fwrite((PTR), (SIZE), (NMEMB), (STREAM)) != (NMEMB)), LBL)
 
-bool star_write (const struct star_file * self, FILE * out)
-{
     bool ret = false;
 
     ifjmp(self == NULL, out);
@@ -373,9 +377,9 @@ bool star_write (const struct star_file * self, FILE * out)
 
 out:
     return ret;
-}
 
 #undef fwrite_ifjmp
+}
 
 /*
  * create functions
@@ -439,7 +443,7 @@ bool star_add_file (struct star_file * self, u64 idx, const u8 * path, u64 size,
     }
 
     { /* path */
-        fheader.path = (void *) strdup((void*) path);
+        fheader.path = (void *) strdup((void *) path);
         ifjmp(fheader.path == NULL, ko);
         fheader.path_len = strlen((void *) fheader.path) + 1;
     }
@@ -498,6 +502,79 @@ bool star_file_offsets (struct star_file * self)
         self->fheaders[i].offset = self->fheaders[i - 1].offset + self->fheaders[i - 1].size;
 
     ret = true;
+
+out:
+    return ret;
+}
+
+/*
+ * search functions
+ */
+u64 star_search (const struct star_file * self, const u8 * fname)
+{
+    bool match = false;
+    u64 ret = 0;
+
+    ifjmp(self == NULL, out);
+    ifjmp(self->fheaders == NULL, out);
+    ifjmp(fname == NULL, out);
+
+    size_t fl = strlen((void *) fname);
+
+    for (ret = 0; ret < self->header.nfiles; ret++) {
+        u64 n = self->fheaders[ret].path_len - 1;
+
+        if (n != fl)
+            continue;
+
+        n = star_min(fl, n);
+
+        match = strncmp((void *) fname, (void *) self->fheaders[ret].path, n) == 0;
+
+        if (match)
+            break;
+    }
+
+out:
+    return (!match) ?
+        UINT64_MAX :
+        ret ;
+}
+
+static int _star_compar_path (const void * _key, const void * _elem)
+{
+    int ret = 0;
+
+    const u8 * key = _key;
+    const struct star_file_header * elem = _elem;
+
+    ifjmp(key == NULL, out);
+    ifjmp(elem == NULL, out);
+
+    ret = star_strcmp((void *) key, (void *) elem->path);
+
+out:
+    return ret;
+}
+
+/* FIXME: Wrong matches, sometimes SEGV */
+u64 star_bsearch (const struct star_file * self, const u8 * fname)
+{
+    u64 ret = UINT64_MAX;
+
+    ifjmp(self == NULL, out);
+    ifjmp(self->fheaders == NULL, out);
+    ifjmp(fname == NULL, out);
+
+    const void * key = fname;
+    const void * base = self->fheaders;
+    size_t nmemb = self->header.nfiles;
+    size_t size = sizeof(struct star_file_header);
+    const void * match = bsearch(key, base, nmemb, size, _star_compar_path);
+
+    ret = (match != NULL) ?
+        (u64) (match - base) :
+        UINT64_MAX;
 
 out:
     return ret;

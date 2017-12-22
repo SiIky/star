@@ -6,6 +6,7 @@
  *  bool
  *
  * <stddef.h>
+ *  UINT64_MAX
  *  uint_least64_t
  *  uint_least8_t
  */
@@ -59,5 +60,9 @@ bool star_write (const struct star_file * self, FILE * out);
 bool               star_add_file     (struct star_file * self, u64 idx, const u8 * path, u64 size, FILE * in);
 bool               star_file_offsets (struct star_file * self);
 struct star_file * star_new          (u64 nfiles);
+
+/* search functions */
+u64 star_search  (const struct star_file * self, const u8 * fname);
+u64 star_bsearch (const struct star_file * self, const u8 * fname);
 
 #endif /* _STAR_H */
