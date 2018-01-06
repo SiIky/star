@@ -151,7 +151,6 @@ void star_free (struct star_file * self)
     }
 
     free(self);
-    memset(self, 0, sizeof(struct star_file));
 }
 
 /*
