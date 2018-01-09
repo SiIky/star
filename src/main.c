@@ -24,9 +24,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "star.h"
+/*
+ * <utils/ifjmp.h>
+ *  ifjmp()
+ */
+#include <utils/ifjmp.h>
 
-#define ifjmp(COND, LBL) if (COND) goto LBL
+#include "star.h"
 
 #define eprintf(MSG, ...)   (fprintf(stderr, MSG "\n", __VA_ARGS__))
 #define errprintf(MSG, ...) (fprintf(stderr, MSG ": %s\n", __VA_ARGS__, strerror(errno)))
@@ -55,18 +59,19 @@ out:
 void usage (char * cmd)
 {
     eprintf(
-            "%s c ARCHIVE FILE...\n"
-            "\tCreate a STAR named ARCHIVE with FILE.\n"
-            "%s x ARCHIVE [FILE]...\n"
-            "\tIf no FILE is given, extract every file of ARCHIVE. Else extract only FILE from ARCHIVE.\n"
-            "%s l ARCHIVE...\n"
-            "\tList files in ARCHIVE.\n",
-            cmd, cmd, cmd);
+        "%s c ARCHIVE FILE...\n"
+        "\tCreate a STAR named ARCHIVE with FILE.\n"
+        "%s x ARCHIVE [FILE]...\n"
+        "\tIf no FILE is given, extract every file of ARCHIVE. Else extract only FILE from ARCHIVE.\n"
+        "%s l ARCHIVE...\n"
+        "\tList files in ARCHIVE.\n",
+        cmd, cmd, cmd);
 }
 
 /* TODO: better file names handling */
-void create (int n, char ** args)
+int create (int n, char ** args)
 {
+    int ret = EXIT_FAILURE;
     FILE * out = NULL;
     FILE * in = NULL;
     struct star_file * star = NULL;
@@ -100,6 +105,8 @@ void create (int n, char ** args)
     if (!star_write(star, out))
         eprintf("Error writing STAR file `%s`", *args);
 
+    ret = EXIT_SUCCESS;
+
 out:
     if (out != NULL)
         fclose(out);
@@ -108,6 +115,8 @@ out:
         fclose(in);
 
     star_free(star);
+
+    return ret;
 }
 
 #define _extract_file_id(S, ID) do {                              \
@@ -129,19 +138,20 @@ out:
 } while (0)
 
 /* TODO: (maybe?) create file hierarchy (directories) */
-void extract (int n, char ** args)
+int extract (int n, char ** args)
 {
     FILE * in = fopen(args[0], "rb");
+
     if (in == NULL) {
         errprintf("Could not open `%s`", args[0]);
-        return;
+        return EXIT_FAILURE;
     }
 
     struct star_file * star = star_read(in);
     fclose(in);
     if (star == NULL) {
         eprintf("An error occurred reading `%s`", args[0]);
-        return;
+        return EXIT_FAILURE;
     }
 
     if (n == 1) { /* extract every file */
@@ -158,15 +168,20 @@ void extract (int n, char ** args)
     }
 
     star_free(star);
+
+    return EXIT_SUCCESS;
 }
 
 /* TODO: read headers only, not fdata */
-void list (int n, char ** args)
+int list (int n, char ** args)
 {
+    int ret = EXIT_SUCCESS;
+
     for (int i = 0; i < n; i++) {
         FILE * in = fopen(args[i], "rb");
         if (in == NULL) {
             errprintf("Could not open `%s`", args[i]);
+            ret = EXIT_FAILURE;
             continue;
         }
 
@@ -175,6 +190,7 @@ void list (int n, char ** args)
 
         if (star == NULL) {
             eprintf("An error occurred reading `%s`", args[i]);
+            ret = EXIT_FAILURE;
             continue;
         }
 
@@ -184,6 +200,8 @@ void list (int n, char ** args)
 
         star_free(star);
     }
+
+    return ret;
 }
 
 int argv_strcmp (const void * _l, const void * _r)
@@ -198,7 +216,7 @@ int main (int argc, char ** argv)
     ifjmp(argc < 2, usage);
 
 #define cmd(f, s, n) ((strcmp(argv[1], (s)) == 0) && argc >= (n)) ? (f)
-    void (*todo) (int, char **) =
+    int (*todo) (int, char **) =
         cmd(create,  "c", 4) : /* star c archive file+ */
         cmd(extract, "x", 3) : /* star x archive file* */
         cmd(list,    "l", 3) : /* star l archive+      */
@@ -209,9 +227,7 @@ int main (int argc, char ** argv)
 
     qsort(argv + 3, argc - 3, sizeof(char *), argv_strcmp);
 
-    todo(argc - 2, argv + 2);
-
-    return EXIT_SUCCESS;
+    return todo(argc - 2, argv + 2);
 
 usage:
     usage(*argv);

@@ -24,17 +24,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * <utils/ifjmp.h>
+ *  ifjmp()
+ */
+#include <utils/ifjmp.h>
+
 #include "star.h"
 
-#define ifjmp(COND, LBL) if (COND) goto LBL
 #define star_max(x, y) (((x) > (y)) ? (x) : (y))
 #define star_min(x, y) (((x) < (y)) ? (x) : (y))
 
 const u8 MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
 
-/*
+/***********************************************************
  * utility functions
- */
+ **********************************************************/
 
 bool star_check_header (const struct star_file * self)
 {
@@ -153,9 +158,9 @@ void star_free (struct star_file * self)
     free(self);
 }
 
-/*
+/***********************************************************
  * read functions (assume `in` was opened in read mode)
- */
+ **********************************************************/
 
 bool star_read_header (struct star_file * self, FILE * in)
 {
@@ -316,9 +321,9 @@ ko_fheaders:
     goto out;
 }
 
-/*
+/***********************************************************
  * write functions (assume `out` was opened in write mode)
- */
+ **********************************************************/
 
 bool star_write (const struct star_file * self, FILE * out)
 {
@@ -380,9 +385,9 @@ out:
 #undef fwrite_ifjmp
 }
 
-/*
+/***********************************************************
  * create functions
- */
+ **********************************************************/
 struct star_file * star_new (u64 nfiles)
 {
     struct star_file _tmp;
@@ -506,9 +511,9 @@ out:
     return ret;
 }
 
-/*
+/***********************************************************
  * search functions
- */
+ **********************************************************/
 u64 star_search (const struct star_file * self, const u8 * fname)
 {
     bool match = false;
@@ -566,10 +571,10 @@ u64 star_bsearch (const struct star_file * self, const u8 * fname)
     ifjmp(fname == NULL, out);
 
     const void * key = fname;
-    const void * base = self->fheaders;
+    const struct star_file_header * base = self->fheaders;
     size_t nmemb = self->header.nfiles;
     size_t size = sizeof(struct star_file_header);
-    const void * match = bsearch(key, base, nmemb, size, _star_compar_path);
+    const struct star_file_header * match = bsearch(key, base, nmemb, size, _star_compar_path);
 
     ret = (match != NULL) ?
         (u64) (match - base) :
