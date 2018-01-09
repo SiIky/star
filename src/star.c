@@ -255,10 +255,8 @@ u64 star_read_fdata (struct star_file * self, FILE * in)
 
     /* assume `fdata` has enough space */
     for (ret = 0; ret < self->header.nfiles; ret++) {
-        u8 * tmp = NULL;
-
         u64 size = self->fheaders[ret].size;
-        tmp = malloc(size);
+        u8 * tmp = malloc(size);
         if (tmp == NULL)
             break;
 
@@ -266,7 +264,7 @@ u64 star_read_fdata (struct star_file * self, FILE * in)
 
         /* we alloc so we have to free in case of error */
         if (r != 1) {
-            free(fdata[ret]);
+            free(tmp);
             break;
         }
 
