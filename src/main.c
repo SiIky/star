@@ -196,7 +196,9 @@ int list (int n, char ** args)
 
         printf("%s:\n", args[i]);
         for (u64 idx = 0; idx < star->header.nfiles; idx++)
-            printf("\t%s\n", star->fheaders[idx].path);
+            printf("\t`%s` (%zu B)\n",
+                   star->fheaders[idx].path,
+                   star->fheaders[idx].size);
 
         star_free(star);
     }
