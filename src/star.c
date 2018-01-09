@@ -14,7 +14,6 @@
  *
  * <string.h>
  *  memcmp()
- *  memset()
  *  strcmp()
  *  strlen()
  *  strncmp()
@@ -280,8 +279,7 @@ out:
 struct star_file * star_read (FILE * in)
 {
     struct star_file * ret = NULL;
-    struct star_file _tmp;
-    memset(&_tmp, 0, sizeof(struct star_file));
+    struct star_file _tmp = {0};
 
     /* failed to read header or `in` is not a STAR file */
     ifjmp(!star_read_header(&_tmp, in), out);
@@ -388,10 +386,8 @@ out:
  **********************************************************/
 struct star_file * star_new (u64 nfiles)
 {
-    struct star_file _tmp;
     struct star_file * ret = NULL;
-
-    memset(&_tmp, 0, sizeof(struct star_file));
+    struct star_file _tmp = {0};
 
     ifjmp(nfiles == 0, out);
 
@@ -428,8 +424,7 @@ bool star_add_file (struct star_file * self, u64 idx, const u8 * path, u64 size,
 {
     bool ret = false;
     u8 * fdata = NULL;
-    struct star_file_header fheader;
-    memset(&fheader, 0, sizeof(struct star_file_header));
+    struct star_file_header fheader = {0};
 
     ifjmp(self == NULL, out);
     ifjmp(in == NULL, out);
