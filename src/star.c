@@ -1,4 +1,8 @@
 /*
+ * <limits.h>
+ *  CHAR_BIT
+ *  UCHAR_MAX
+ *
  * <stdio.h>
  *  FILE
  *  fread()
@@ -18,6 +22,7 @@
  *  strlen()
  *  strncmp()
  */
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +44,36 @@ const u8 MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
 /***********************************************************
  * utility functions
  **********************************************************/
+
+/*
+ * `_star_uint_width_encode()` and `_star_uint_width_decode()`
+ * from http://www.iso-9899.info/wiki/Temp
+ */
+
+/**
+ * @brief Serialize @a in with @a width into @a out
+ * @param out Where to serialize to
+ * @param in The integer to serialize
+ * @param width The witdh of the integer to serialize
+ */
+static void _star_uint_width_encode (u8 * out, u64 in, size_t width)
+{
+    for (size_t i = 0; i < width; i++)
+        out[i] = (in >> (i * CHAR_BIT)) & UCHAR_MAX;
+}
+
+/**
+ * @brief Deserialize @a out from @a in with @a width
+ * @param out Where to deserialize to
+ * @param in The data to deserialize from
+ * @param width The witdh of the integer to deserialize
+ */
+static void _star_uint_width_decode (u64 * out, u8 * in, size_t width)
+{
+    *out = 0;
+    for (size_t i = 0; i < width; i++)
+        *out |= (u64) in[i] << (i * CHAR_BIT);
+}
 
 bool star_check_header (const struct star_file * self)
 {
@@ -344,35 +379,35 @@ bool star_write (const struct star_file * self, FILE * out)
 
     /* write STAR header */
     fwrite_ifjmp(&self->header,
-                 sizeof(struct star_header),
-                 1,
-                 out,
-                 out);
+            sizeof(struct star_header),
+            1,
+            out,
+            out);
 
     /* write file headers */
     for (u64 i = 0; i < self->header.nfiles; i++) {
         /* write `size`, `offset` and `path_len` */
         fwrite_ifjmp(self->fheaders + i,
-                     sizeof(u64),
-                     3,
-                     out,
-                     out);
+                sizeof(u64),
+                3,
+                out,
+                out);
 
         /* write `path` */
         fwrite_ifjmp(self->fheaders[i].path,
-                     sizeof(u8),
-                     self->fheaders[i].path_len,
-                     out,
-                     out);
+                sizeof(u8),
+                self->fheaders[i].path_len,
+                out,
+                out);
     }
 
     /* write file data */
     for (u64 i = 0; i < self->header.nfiles; i++)
         fwrite_ifjmp(self->fdata[i],
-                     self->fheaders[i].size,
-                     1,
-                     out,
-                     out);
+                self->fheaders[i].size,
+                1,
+                out,
+                out);
 
     ret = true;
 
@@ -539,20 +574,17 @@ out:
         ret ;
 }
 
-static int _star_compar_path (const void * _key, const void * _elem)
+/**
+ * @brief Compare @a path with a file header @a fh
+ * @param path Path to look for on @a fh
+ * @param fh A file header
+ * @returns Similar to `strcmp()`
+ */
+static int _star_compar_path (const void * path, const void * fh)
 {
-    int ret = 0;
-
-    const u8 * key = _key;
-    const struct star_file_header * elem = _elem;
-
-    ifjmp(key == NULL, out);
-    ifjmp(elem == NULL, out);
-
-    ret = star_strcmp((void *) key, (void *) elem->path);
-
-out:
-    return ret;
+    return (path != NULL && fh != NULL) ?
+        star_strcmp(path, ((const struct star_file_header *) fh)->path) :
+        0 ;
 }
 
 /* FIXME: Wrong matches, sometimes SEGV */

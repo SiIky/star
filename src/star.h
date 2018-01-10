@@ -5,7 +5,7 @@
  * <stdbool.h>
  *  bool
  *
- * <stddef.h>
+ * <stdint.h>
  *  UINT64_MAX
  *  uint_least64_t
  *  uint_least8_t
