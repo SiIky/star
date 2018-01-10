@@ -3,6 +3,9 @@
  *  errno
  *  strerror()
  *
+ * <inttypes.h>
+ *  PRIu64
+ *
  * <stdio.h>
  *  FILE
  *  fclose()
@@ -20,6 +23,7 @@
  *  strcmp()
  */
 #include <errno.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -74,9 +78,8 @@ int create (int n, char ** args)
     int ret = EXIT_FAILURE;
     FILE * out = NULL;
     FILE * in = NULL;
-    struct star_file * star = NULL;
 
-    star = star_new(n - 1);
+    struct star_file * star = star_new(n - 1);
     ifjmp(star == NULL, out);
 
     for (int i = 1; i < n; i++) {
@@ -92,7 +95,9 @@ int create (int n, char ** args)
         if (!res)
             errprintf("Error adding file `%s`", args[i]);
         ifjmp(!res, out);
-        in = (fclose(in), NULL);
+
+        fclose(in);
+        in = NULL;
     }
 
     star_file_offsets(star);
@@ -196,7 +201,7 @@ int list (int n, char ** args)
 
         printf("%s:\n", args[i]);
         for (u64 idx = 0; idx < star->header.nfiles; idx++)
-            printf("\t`%s` (%zu B)\n",
+            printf("\t`%s` (%" PRIu64 " B)\n",
                    star->fheaders[idx].path,
                    star->fheaders[idx].size);
 

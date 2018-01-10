@@ -1,12 +1,15 @@
 CC=musl-gcc
 #CC=cc
 EXEC=star
+HEADERS=star.h
 INPUT=main.c star.c
 OBJS=$(INPUT:.c=.o)
 DEST=~/bin
 
+# for <utils/ifjmp.h>
+INCLUDE= -I/usr/local/include/
+
 # _XOPEN_SOURCE for `strdup()`
-# -I/usr/local/include/ for <utils/ifjmp.h>
 CFLAGS=\
       -D_XOPEN_SOURCE=500 \
       -std=c11 \
@@ -15,7 +18,7 @@ CFLAGS=\
       -Wall \
       -Wextra \
       -Werror \
-      -I/usr/local/include/
+      $(INCLUDE)
 
 debug: $(INPUT)
 	$(CC) $(CFLAGS) -Og -g -c $(INPUT)
@@ -34,3 +37,6 @@ uninstall:
 
 clean:
 	rm -rf $(OBJS) $(EXEC)
+
+check: $(INPUT)
+	cppcheck -f $(INCLUDE) --language=c --enable=all  $(INPUT) $(HEADERS)
