@@ -17,7 +17,7 @@ CFLAGS=\
       -Wpedantic \
       -Wall \
       -Wextra \
-      -Werror \
+      -Wconversion \
       $(INCLUDE)
 
 debug: $(INPUT)

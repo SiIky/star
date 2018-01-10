@@ -202,8 +202,8 @@ u64 star_read_fheaders (struct star_file * self, FILE * in)
 
         { /* read `size,` `offset` and `path_len` */
             void * ptr = &tmp;
-            u64 size = sizeof(u64);
-            u64 nmemb = 3;
+            size_t size = sizeof(u64);
+            size_t nmemb = 3;
 
             u64 r = fread(ptr, size, nmemb, in);
 
@@ -220,8 +220,9 @@ u64 star_read_fheaders (struct star_file * self, FILE * in)
 
         { /* read path */
             void * ptr = tmp.path;
-            u64 size = sizeof(u8);
-            u64 nmemb = tmp.path_len;
+            size_t size = sizeof(u8);
+            size_t nmemb = tmp.path_len;
+
             u64 r = fread(ptr, size, nmemb, in);
 
             /* we alloc so we have to free in case of error */
@@ -254,7 +255,7 @@ u64 star_read_fdata (struct star_file * self, FILE * in)
 
     /* assume `fdata` has enough space */
     for (ret = 0; ret < self->header.nfiles; ret++) {
-        u64 size = self->fheaders[ret].size;
+        size_t size = self->fheaders[ret].size;
         u8 * tmp = malloc(size);
         if (tmp == NULL)
             break;

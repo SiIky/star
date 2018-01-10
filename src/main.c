@@ -73,16 +73,17 @@ void usage (char * cmd)
 }
 
 /* TODO: better file names handling */
-int create (int n, char ** args)
+int create (int _n, char ** args)
 {
     int ret = EXIT_FAILURE;
     FILE * out = NULL;
     FILE * in = NULL;
 
+    u64 n = (u64) _n; /* `_n > 0` */
     struct star_file * star = star_new(n - 1);
     ifjmp(star == NULL, out);
 
-    for (int i = 1; i < n; i++) {
+    for (u64 i = 1; i < n; i++) {
         in = fopen(args[i], "rb");
         if (in == NULL)
             errprintf("Error opening `%s`", args[i]);
