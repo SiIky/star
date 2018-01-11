@@ -38,5 +38,5 @@ uninstall:
 clean:
 	rm -rf $(OBJS) $(EXEC)
 
-check: $(INPUT)
-	cppcheck -std=c11 -f $(INCLUDE) --language=c --enable=warning  $(INPUT) $(HEADERS)
+check: $(INPUT) $(HEADERS)
+	cppcheck --std=c11 -f $(INCLUDE) --language=c --enable=warning  $(INPUT) $(HEADERS)
