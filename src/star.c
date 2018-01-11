@@ -58,6 +58,7 @@ const u8 MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
  */
 static void _star_uint_width_encode (u8 * out, u64 in, size_t width)
 {
+    if (width > sizeof(u64)) return;
     for (size_t i = 0; i < width; i++)
         out[i] = (in >> (i * CHAR_BIT)) & UCHAR_MAX;
 }
@@ -70,6 +71,7 @@ static void _star_uint_width_encode (u8 * out, u64 in, size_t width)
  */
 static void _star_uint_width_decode (u64 * out, u8 * in, size_t width)
 {
+    if (width > sizeof(u64)) return;
     *out = 0;
     for (size_t i = 0; i < width; i++)
         *out |= (u64) in[i] << (i * CHAR_BIT);
@@ -246,23 +248,16 @@ u64 star_read_fheaders (struct star_file * self, FILE * in)
                 break;
         }
 
-        { /* alloc path */
+        { /* alloc and read path */
             tmp.path = malloc(tmp.path_len);
-
             if (tmp.path == NULL)
                 break;
-        }
 
-        { /* read path */
-            void * ptr = tmp.path;
-            size_t size = sizeof(u8);
             size_t nmemb = tmp.path_len;
-
-            u64 r = fread(ptr, size, nmemb, in);
-
+            u64 r = fread(tmp.path, sizeof(u8), nmemb, in);
             /* we alloc so we have to free in case of error */
             if (r != nmemb) {
-                free(ptr);
+                free(tmp.path);
                 break;
             }
         }
@@ -295,8 +290,8 @@ u64 star_read_fdata (struct star_file * self, FILE * in)
         if (tmp == NULL)
             break;
 
+        /* files are read as a whole */
         u64 r = fread(tmp, size, 1, in);
-
         /* we alloc so we have to free in case of error */
         if (r != 1) {
             free(tmp);
@@ -320,13 +315,16 @@ struct star_file * star_read (FILE * in)
     /* failed to read header or `in` is not a STAR file */
     ifjmp(!star_read_header(&_tmp, in), out);
 
-    {
+    { /* allocate and copy the already read data */
         ret = malloc(sizeof(struct star_file));
         ifjmp(ret == NULL, out);
 
         *ret = _tmp;
     }
 
+    /*
+     * if it wasnt possible to read everything, return NULL
+     */
     /* number of successfully read file headers */
     u64 nfheaders = star_read_fheaders(ret, in);
     ifjmp(ret->header.nfiles != nfheaders, ko_fheaders);
@@ -435,7 +433,7 @@ struct star_file * star_new (u64 nfiles)
     ifjmp(_tmp.fheaders == NULL, ko);
     ifjmp(ret == NULL, ko);
 
-    memcpy(&_tmp.header.magic, MAGIC, 4);
+    memcpy(&_tmp.header.magic, MAGIC, sizeof(MAGIC));
     _tmp.header.nfiles = nfiles;
 
     *ret = _tmp;
@@ -507,9 +505,8 @@ ko:
  */
 bool star_file_offsets (struct star_file * self)
 {
-    bool ret = false;
-
-    ifjmp(self == NULL, out);
+    if (self == NULL)
+        return false;
 
     u64 offset = 0;
 
@@ -521,23 +518,20 @@ bool star_file_offsets (struct star_file * self)
         offset += sizeof(struct star_header);
         offset += self->header.nfiles * sizeof(struct star_file_header);
 
+        /* add path length */
         for (u64 i = 0; i < self->header.nfiles; i++)
             offset += self->fheaders[i].path_len;
 
-        /* subtract size of pointers */
-        offset -= self->header.nfiles * sizeof(u8 *);
+        /* subtract size of pointer to path */
+        offset -= self->header.nfiles * sizeof(self->fheaders->path);
     }
 
     /* beggining of fdata */
     self->fheaders[0].offset = offset;
+    for (u64 i = 0; i < self->header.nfiles - 1; i++)
+        self->fheaders[i + 1].offset = self->fheaders[i].offset + self->fheaders[i].size;
 
-    for (u64 i = 1; i < self->header.nfiles; i++)
-        self->fheaders[i].offset = self->fheaders[i - 1].offset + self->fheaders[i - 1].size;
-
-    ret = true;
-
-out:
-    return ret;
+    return true;
 }
 
 /***********************************************************

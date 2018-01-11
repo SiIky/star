@@ -68,7 +68,7 @@ void usage (char * cmd)
         "%s x ARCHIVE [FILE]...\n"
         "\tIf no FILE is given, extract every file of ARCHIVE. Else extract only FILE from ARCHIVE.\n"
         "%s l ARCHIVE...\n"
-        "\tList files in ARCHIVE.\n",
+        "\tList files in ARCHIVE.",
         cmd, cmd, cmd);
 }
 
