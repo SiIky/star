@@ -40,3 +40,6 @@ clean:
 
 check: $(INPUT) $(HEADERS)
 	cppcheck --std=c11 -f $(INCLUDE) --language=c --enable=warning  $(INPUT) $(HEADERS)
+
+tags:
+	ctags --language-force=c --tag-relative=yes -f ../.tags $(INPUT) $(HEADERS)
