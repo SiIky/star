@@ -39,11 +39,29 @@
 #define star_max(x, y) (((x) > (y)) ? (x) : (y))
 #define star_min(x, y) (((x) < (y)) ? (x) : (y))
 
-const u8 MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
+static const u8 STAR_MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
 
 /***********************************************************
  * utility functions
  **********************************************************/
+
+static inline bool _star_check_ptrs (const struct star_file * self)
+{
+    bool ret = false;
+
+    ifjmp(self == NULL, out);
+    ifjmp(self->fheaders == NULL, out);
+    ifjmp(self->fdata == NULL, out);
+
+    ret = true;
+
+    for (u64 i = 0; i < self->header.nfiles && ret; i++)
+        ret = self->fheaders[i].path != NULL
+            && self->fdata[i] != NULL;
+
+out:
+    return ret;
+}
 
 /*
  * `_star_uint_width_encode()` and `_star_uint_width_decode()`
@@ -79,9 +97,9 @@ static void _star_uint_width_decode (u64 * out, u8 * in, size_t width)
 
 bool star_check_header (const struct star_file * self)
 {
-    return (self != NULL) ?
-        memcmp(self->header.magic, MAGIC, 4) == 0 :
-        false ;
+    return (self != NULL)
+        && (memcmp(self->header.magic, STAR_MAGIC,
+                    sizeof(STAR_MAGIC)) == 0);
 }
 
 //
@@ -198,6 +216,35 @@ void star_free (struct star_file * self)
  * read functions (assume `in` was opened in read mode)
  **********************************************************/
 
+/*
+ * macro to define functions to read specific unsigned integer types
+ */
+#define _star_make_read_fun(name, type)                       \
+    bool name (type * out, FILE * in, u64 nmemb) {            \
+        ifjmp(in == NULL, ko);                                \
+        ifjmp(out == NULL, ko);                               \
+        u8 buf[sizeof(type)] = {0};                           \
+        for (u64 i = 0; i < nmemb; i++) {                     \
+            u64 r = fread(buf, sizeof(type), 1, in);          \
+            ifjmp(r != 1, ko);                                \
+            u64 tmp = 0;                                      \
+            _star_uint_width_decode(&tmp, buf, sizeof(type)); \
+            *out = (type) tmp; /* safe because of above */    \
+        }                                                     \
+        return true;                                          \
+        ko:                                                   \
+        return false;                                         \
+    }
+
+/*
+ * define functions to read specific unsigned integer types
+ */
+_star_make_read_fun(star_read_u64, u64)
+
+/* read SIZE bytes from OUT int IN, as if they were a single unit */
+#define star_read_u8_single(OUT, IN, SIZE) \
+        (fread((OUT), (SIZE), 1, (IN)) == 1)
+
 bool star_read_header (struct star_file * self, FILE * in)
 {
     bool ret = false;
@@ -205,13 +252,39 @@ bool star_read_header (struct star_file * self, FILE * in)
     ifjmp(self == NULL, out);
     ifjmp(in == NULL, out);
 
-    u64 r = fread(&self->header, sizeof(struct star_header), 1, in);
-    ifjmp(r != 1, out);
+    struct star_file tmp = {0};
 
-    ret = star_check_header(self);
+    ifjmp(!star_read_u8_single(&tmp.header.magic, in, sizeof(STAR_MAGIC)), out);
+    ifjmp(!star_check_header(&tmp), out);
+    ifjmp(!star_read_u64(&tmp.header.nfiles, in, 1), out);
 
+    self->header = tmp.header;
+    ret = true;
 out:
     return ret;
+}
+
+bool star_read_fheader (struct star_file_header * fheader, FILE * in)
+{
+    ifjmp(fheader == NULL, ko);
+    ifjmp(in == NULL, ko);
+
+    star_read_u64(&fheader->size, in, 1);
+    star_read_u64(&fheader->offset, in, 1);
+    star_read_u64(&fheader->path_len, in, 1);
+
+    fheader->path = malloc(fheader->path_len);
+    ifjmp(fheader->path == NULL, ko);
+
+    if (!star_read_u8_single(fheader->path, in, fheader->path_len)) {
+        free(fheader->path);
+        fheader->path = NULL;
+        goto ko;
+    }
+
+    return true;
+ko:
+    return false;
 }
 
 u64 star_read_fheaders (struct star_file * self, FILE * in)
@@ -231,36 +304,11 @@ u64 star_read_fheaders (struct star_file * self, FILE * in)
 
     /* assume `fheaders` has enough space  */
     for (ret = 0; ret < nfiles; ret++) {
-        /*
-         * dont change original memory if possible,
-         * write only at the end of the loop
-         */
-        struct star_file_header tmp;
+        struct star_file_header tmp = {0};
 
-        { /* read `size,` `offset` and `path_len` */
-            void * ptr = &tmp;
-            size_t size = sizeof(u64);
-            size_t nmemb = 3;
-
-            u64 r = fread(ptr, size, nmemb, in);
-
-            if (r != nmemb)
-                break;
-        }
-
-        { /* alloc and read path */
-            tmp.path = malloc(tmp.path_len);
-            if (tmp.path == NULL)
-                break;
-
-            size_t nmemb = tmp.path_len;
-            u64 r = fread(tmp.path, sizeof(u8), nmemb, in);
-            /* we alloc so we have to free in case of error */
-            if (r != nmemb) {
-                free(tmp.path);
-                break;
-            }
-        }
+        /* wasnt able to read the fheader? */
+        if (!star_read_fheader(&tmp, in))
+            break;
 
         fheaders[ret] = tmp;
     }
@@ -285,20 +333,15 @@ u64 star_read_fdata (struct star_file * self, FILE * in)
 
     /* assume `fdata` has enough space */
     for (ret = 0; ret < self->header.nfiles; ret++) {
-        size_t size = self->fheaders[ret].size;
-        u8 * tmp = malloc(size);
-        if (tmp == NULL)
+        fdata[ret] = malloc(self->fheaders[ret].size);
+        if (fdata[ret] == NULL)
             break;
 
-        /* files are read as a whole */
-        u64 r = fread(tmp, size, 1, in);
-        /* we alloc so we have to free in case of error */
-        if (r != 1) {
-            free(tmp);
+        if (!star_read_u8_single(fdata[ret], in, self->fheaders[ret].size)) {
+            free(fdata[ret]);
+            fdata[ret] = NULL;
             break;
         }
-
-        fdata[ret] = tmp;
     }
 
     self->fdata = fdata;
@@ -310,16 +353,15 @@ out:
 struct star_file * star_read (FILE * in)
 {
     struct star_file * ret = NULL;
-    struct star_file _tmp = {0};
+    struct star_file tmp = {0};
 
     /* failed to read header or `in` is not a STAR file */
-    ifjmp(!star_read_header(&_tmp, in), out);
+    ifjmp(!star_read_header(&tmp, in), out);
 
     { /* allocate and copy the already read data */
         ret = malloc(sizeof(struct star_file));
         ifjmp(ret == NULL, out);
-
-        *ret = _tmp;
+        *ret = tmp;
     }
 
     /*
@@ -355,64 +397,113 @@ ko_fheaders:
  * write functions (assume `out` was opened in write mode)
  **********************************************************/
 
-bool star_write (const struct star_file * self, FILE * out)
-{
-#define fwrite_ifjmp(PTR, SIZE, NMEMB, STREAM, LBL) \
-    ifjmp((fwrite((PTR), (SIZE), (NMEMB), (STREAM)) != (NMEMB)), LBL)
+/*
+ * macro to define functions to write specific unsigned integer types
+ */
+#define _star_make_write_fun(name, type)                       \
+    bool name (const type * in, FILE * out, u64 nmemb) {       \
+        ifjmp(in == NULL, ko);                                 \
+        ifjmp(out == NULL, ko);                                \
+        u8 buf[sizeof(type)] = {0};                            \
+        for (u64 i = 0; i < nmemb; i++) {                      \
+            _star_uint_width_encode(buf, in[i], sizeof(type)); \
+            u64 w = fwrite(buf, sizeof(type), 1, out);         \
+            ifjmp(w != 1, ko);                                 \
+        }                                                      \
+        return true;                                           \
+    ko:                                                        \
+        return false;                                          \
+    }
 
+/*
+ * define functions to write specific unsigned integer types
+ */
+_star_make_write_fun(star_write_u64, u64)
+
+#define star_write_u8_single(IN, OUT, SIZE) \
+        (fwrite((IN), (SIZE), 1, (OUT)) == 1)
+
+bool star_write_header (const struct star_file * self, FILE * out)
+{
+    ifjmp(self == NULL, ko);
+    ifjmp(out == NULL, ko);
+
+    ifjmp(!star_write_u8_single(STAR_MAGIC, out, sizeof(STAR_MAGIC)), ko);
+    ifjmp(!star_write_u64(&self->header.nfiles, out, 1), ko);
+
+    return true;
+ko:
+    return false;
+}
+
+#define try(cond, stmt) if (cond) { (cond) = (stmt); }
+#define try_jmp(cond, lbl, stmt) \
+    try((cond), (stmt)) else { goto lbl; }
+
+bool star_write_fheader (const struct star_file_header * fh, FILE * out)
+{
     bool ret = false;
 
-    ifjmp(self == NULL, out);
-    ifjmp(out == NULL, out);
-    ifjmp(!star_check_header(self), out);
-    ifjmp(self->fheaders == NULL, out);
-    ifjmp(self->fdata == NULL, out);
-
-    /* assume both `self->fheaders` and `self->fdata` have the correct size */
-    for (u64 i = 0; i < self->header.nfiles; i++) {
-        ifjmp(self->fdata[i] == NULL, out);
-        ifjmp(self->fheaders[i].path == NULL, out);
-        ifjmp((strlen((void *) self->fheaders[i].path) + 1) != self->fheaders[i].path_len, out);
-    }
-
-    /* write STAR header */
-    fwrite_ifjmp(&self->header,
-            sizeof(struct star_header),
-            1,
-            out,
-            out);
-
-    /* write file headers */
-    for (u64 i = 0; i < self->header.nfiles; i++) {
-        /* write `size`, `offset` and `path_len` */
-        fwrite_ifjmp(self->fheaders + i,
-                sizeof(u64),
-                3,
-                out,
-                out);
-
-        /* write `path` */
-        fwrite_ifjmp(self->fheaders[i].path,
-                sizeof(u8),
-                self->fheaders[i].path_len,
-                out,
-                out);
-    }
-
-    /* write file data */
-    for (u64 i = 0; i < self->header.nfiles; i++)
-        fwrite_ifjmp(self->fdata[i],
-                self->fheaders[i].size,
-                1,
-                out,
-                out);
+    ifjmp(fh == NULL, ko);
+    ifjmp(out == NULL, ko);
 
     ret = true;
 
-out:
-    return ret;
+    try_jmp(ret, ko, star_write_u64(&fh->size,     out, 1));
+    try_jmp(ret, ko, star_write_u64(&fh->offset,   out, 1));
+    try_jmp(ret, ko, star_write_u64(&fh->path_len, out, 1));
+    try_jmp(ret, ko, star_write_u8_single(fh->path, out, fh->path_len));
 
-#undef fwrite_ifjmp
+    return ret;
+ko:
+    return false;
+}
+
+bool star_write_fheaders (const struct star_file * self, FILE * out)
+{
+    bool ret = false;
+
+    ifjmp(self == NULL, ko);
+    ifjmp(out == NULL, ko);
+
+    ret = true;
+    for (u64 i = 0; i < self->header.nfiles && ret; i++)
+        ret = star_write_fheader(self->fheaders + i, out);
+
+ko:
+    return ret;
+}
+
+bool star_write_fdata (const struct star_file * self, FILE * out)
+{
+    ifjmp(self == NULL, ko);
+    ifjmp(out == NULL, ko);
+    ifjmp(self->fheaders == NULL, ko);
+    ifjmp(self->fdata == NULL, ko);
+
+    u64 i = 0;
+    for (i = 0; i < self->header.nfiles; i++)
+        if (!star_write_u8_single(self->fdata[i], out, self->fheaders[i].size))
+            break;
+
+    return i == self->header.nfiles;
+ko:
+    return false;
+}
+
+bool star_write (const struct star_file * self, FILE * out)
+{
+    ifjmp(!_star_check_ptrs(self), ko);
+    ifjmp(out == NULL, ko);
+    ifjmp(!star_check_header(self), ko);
+
+    ifjmp(!star_write_header(self, out), ko);
+    ifjmp(!star_write_fheaders(self, out), ko);
+    ifjmp(!star_write_fdata(self, out), ko);
+
+    return true;
+ko:
+    return false;
 }
 
 /***********************************************************
@@ -433,7 +524,7 @@ struct star_file * star_new (u64 nfiles)
     ifjmp(_tmp.fheaders == NULL, ko);
     ifjmp(ret == NULL, ko);
 
-    memcpy(&_tmp.header.magic, MAGIC, sizeof(MAGIC));
+    memcpy(&_tmp.header.magic, STAR_MAGIC, sizeof(STAR_MAGIC));
     _tmp.header.nfiles = nfiles;
 
     *ret = _tmp;
@@ -548,23 +639,17 @@ u64 star_search (const struct star_file * self, const u8 * fname)
 
     size_t fl = strlen((void *) fname);
 
-    for (ret = 0; ret < self->header.nfiles; ret++) {
+    for (ret = 0; ret < self->header.nfiles && !match; ret++) {
         u64 n = self->fheaders[ret].path_len - 1;
-
-        if (n != fl)
-            continue;
-
-        n = star_min(fl, n);
-
-        match = strncmp((void *) fname, (void *) self->fheaders[ret].path, n) == 0;
-
-        if (match)
-            break;
+        match = (n == fl) ?
+            strncmp((void *) fname,
+                    (void *) self->fheaders[ret].path, n) == 0 :
+            match ;
     }
 
 out:
     return (!match) ?
-        UINT64_MAX :
+        STAR_DNF :
         ret ;
 }
 
@@ -584,7 +669,7 @@ static int _star_compar_path (const void * path, const void * fh)
 /* FIXME: Wrong matches, sometimes SEGV */
 u64 star_bsearch (const struct star_file * self, const u8 * fname)
 {
-    u64 ret = UINT64_MAX;
+    u64 ret = STAR_DNF;
 
     ifjmp(self == NULL, out);
     ifjmp(self->fheaders == NULL, out);
@@ -598,7 +683,7 @@ u64 star_bsearch (const struct star_file * self, const u8 * fname)
 
     ret = (match != NULL) ?
         (u64) (match - base) :
-        UINT64_MAX;
+        STAR_DNF;
 
 out:
     return ret;

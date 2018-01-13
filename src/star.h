@@ -13,6 +13,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/**
+ * @brief "Did Not Find", for use with search functions
+ */
+#define STAR_DNF UINT64_MAX
+
 /*
  * exact size ints names are too dam long;
  * not required by C11, but supported at least by
@@ -21,8 +26,6 @@
 typedef uint64_t u64;
 typedef uint8_t  u8;
 typedef int8_t   i8;
-
-extern const u8 MAGIC[4];
 
 /**
  * @brief A STAR header
@@ -104,6 +107,14 @@ bool               star_read_header   (struct star_file * self, FILE * in);
  * @returns Number of files read, or `0` if an error occurred
  */
 u64                star_read_fdata    (struct star_file * self, FILE * in);
+
+/**
+ * @brief Read one archived file header from @a in to @a fheader
+ * @param fheader STAR file header to read to
+ * @param in A FILE stream opened with the "rb" mode and positioned at the beggining of the first archived file header
+ * @returns `true` if it successfully read the file header, `false` otherwise
+ */
+bool star_read_fheader (struct star_file_header * fheader, FILE * in);
 
 /**
  * @brief Read archived file headers from @a in to @a self
