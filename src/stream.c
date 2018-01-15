@@ -53,7 +53,6 @@ void stream_close (Stream * self)
     if (self->type == _STREAM_TYPE_RAW) {
         if (self->s.r.ptr != NULL)
             free(self->s.r.ptr);
-
         memset(&self->s.r, 0, sizeof(self->s.r));
     } else {
         fclose(self->s.f);
@@ -65,22 +64,19 @@ void stream_close (Stream * self)
 
 bool stream_from_file (Stream * self, FILE * file)
 {
-    ifjmp(file == NULL, ko);
-    ifjmp(self == NULL, ko);
+    if (file == NULL || self == NULL)
+        return false;
 
     self->type = _STREAM_TYPE_FILE;
     self->s.f = file;
 
     return true;
-ko:
-    return false;
 }
 
 bool stream_from_raw (Stream * self, void * ptr, size_t size)
 {
-    ifjmp(self == NULL, ko);
-    ifjmp(ptr == NULL, ko);
-    ifjmp(size == 0, ko);
+    if (self == NULL || ptr == NULL || size == 0)
+        return false;
 
     self->type = _STREAM_TYPE_RAW;
     self->s.r.offset = 0;
@@ -88,9 +84,26 @@ bool stream_from_raw (Stream * self, void * ptr, size_t size)
     self->s.r.size = size;
 
     return true;
-ko:
-    return false;
 }
+
+/**
+ * @brief Write at most @a pnmemb of @a psize from @a src to @a dst
+ * @param dst The `dst` parameter of `memcpy()`
+ * @param src The `src` parameter of `memcpy()`
+ * @param ssize Total size the stream has available, in bytes
+ * @param soff Offset of the stream
+ * @param psize Size of each element to copy
+ * @param pnmemb Number of elements wanted
+ */
+#define _stream_rw_raw(dst, src, ssize, soff, psize, pnmemb) \
+    do {                                                     \
+        size_t have_nmemb = ((ssize) - (soff)) / (psize);    \
+        size_t nmemb2cp   = min((pnmemb), have_nmemb);       \
+        size_t bytes2cp   = nmemb2cp * (psize);              \
+        memcpy((dst), (src), bytes2cp);                      \
+        (soff) += bytes2cp;                                  \
+        return nmemb2cp;                                     \
+    } while (0)
 
 size_t stream_read (Stream * self, void * out, size_t size, size_t nmemb)
 {
@@ -100,19 +113,9 @@ size_t stream_read (Stream * self, void * out, size_t size, size_t nmemb)
     if (self->type == _STREAM_TYPE_FILE)
         return fread(out, size, nmemb, self->s.f);
 
-    /* TODO: read elements, not bytes */
     /* _STREAM_TYPE_RAW */
-    size_t want = size * nmemb;
-    size_t have = (self->s.r.size > self->s.r.offset) ?
-        (self->s.r.size - self->s.r.offset) :
-        0 ;
-    size_t bytes = min(want, have);
-
-    memcpy(out, self->s.r.ptr, bytes);
-
-    self->s.r.offset += bytes;
-
-    return bytes;
+    _stream_rw_raw(out, self->s.r.ptr, self->s.r.size,
+            self->s.r.offset, size, nmemb);
 }
 
 size_t stream_write (Stream * self, const void * in, size_t size, size_t nmemb)
@@ -123,20 +126,11 @@ size_t stream_write (Stream * self, const void * in, size_t size, size_t nmemb)
     if (self->type == _STREAM_TYPE_FILE)
         return fwrite(in, size, nmemb, self->s.f);
 
-    /* TODO: read elements, not bytes */
     /* _STREAM_TYPE_RAW */
-    size_t want = size * nmemb;
-    size_t have = (self->s.r.size > self->s.r.offset) ?
-        (self->s.r.size - self->s.r.offset) :
-        0 ;
-    size_t bytes = min(want, have);
-
-    memcpy(self->s.r.ptr, in, bytes);
-
-    self->s.r.offset += bytes;
-
-    return bytes;
+    _stream_rw_raw(self->s.r.ptr, in, self->s.r.size,
+            self->s.r.offset, size, nmemb);
 }
+#undef _stream_rw_raw
 
 FILE * stream_file (Stream * self)
 {
