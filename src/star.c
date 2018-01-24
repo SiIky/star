@@ -41,7 +41,7 @@ static const u8 STAR_MAGIC[4] = { 0x53, 0x54, 0x41, 0x52 };
  * @param self The STAR
  * @returns `false` if any of the pointers in @a self is NULL, `true` otherwise
  */
-static inline bool _star_check_ptrs (const struct star_file * self)
+static inline bool _star_check_ptrs (const struct STAR * self)
 {
     bool ret = false;
 
@@ -91,7 +91,7 @@ static void _star_uint_width_decode (u64 * out, u8 * in, size_t width)
         *out |= (u64) in[i] << (i * CHAR_BIT);
 }
 
-bool star_check_header (const struct star_file * self)
+bool star_check_header (const struct STAR * self)
 {
     return (self != NULL)
         && (memcmp(self->header.magic, STAR_MAGIC,
@@ -182,7 +182,7 @@ int star_strcmp (const void * _l, const void * _r)
         diff ;
 }
 
-void star_free (struct star_file * self)
+void star_free (struct STAR * self)
 {
     if (self == NULL)
         return;
@@ -235,24 +235,26 @@ void star_free (struct star_file * self)
 /*
  * define functions to read specific unsigned integer types
  */
+_star_make_read_fun(star_read_u8,  u8);
+_star_make_read_fun(star_read_u32, u32);
 _star_make_read_fun(star_read_u64, u64);
 
 /* read SIZE bytes from OUT int IN, as if they were a single unit */
 #define star_read_u8_single(OUT, IN, SIZE) \
         (stream_read((IN), (OUT), (SIZE), 1) == 1)
 
-bool star_read_header (struct star_file * self, Stream * in)
+bool star_read_header (struct STAR * self, Stream * in)
 {
     bool ret = false;
 
     ifjmp(self == NULL, out);
     ifjmp(in == NULL, out);
 
-    struct star_file tmp = {0};
+    struct STAR tmp = {0};
 
     ret =  star_read_u8_single(&tmp.header.magic, in, sizeof(STAR_MAGIC))
         && star_check_header(&tmp)
-        && star_read_u64(&tmp.header.nfiles, in, 1);
+        && star_read_u32(&tmp.header.nfiles, in, 1);
 
     self->header = tmp.header;
     ret = true;
@@ -260,16 +262,16 @@ out:
     return ret;
 }
 
-bool star_read_fheader (struct star_file_header * fheader, Stream * in)
+bool star_read_fheader (struct StarFileHeader * fheader, Stream * in)
 {
     bool ret = false;
 
     ifjmp(fheader == NULL, ko);
     ifjmp(in == NULL, ko);
 
-    ret =  star_read_u64(&fheader->size,     in, 1)
-        && star_read_u64(&fheader->offset,   in, 1)
-        && star_read_u64(&fheader->path_len, in, 1);
+    ret =  star_read_u32(&fheader->size,    in, 1)
+        && star_read_u64(&fheader->offset,  in, 1)
+        && star_read_u8(&fheader->path_len, in, 1);
 
     ifjmp(!ret, ko);
 
@@ -285,7 +287,7 @@ ko:
     return ret;
 }
 
-u64 star_read_fheaders (struct star_file * self, Stream * in)
+u64 star_read_fheaders (struct STAR * self, Stream * in)
 {
     u64 ret = 0;
 
@@ -295,14 +297,14 @@ u64 star_read_fheaders (struct star_file * self, Stream * in)
     u64 nfiles = self->header.nfiles;
 
     /* if fheaders already has memory, use it */
-    struct star_file_header * fheaders = (self->fheaders == NULL) ?
-        calloc(self->header.nfiles, sizeof(struct star_file_header)) :
+    struct StarFileHeader * fheaders = (self->fheaders == NULL) ?
+        calloc(self->header.nfiles, sizeof(struct StarFileHeader)) :
         self->fheaders ;
     ifjmp(fheaders == NULL, out);
 
     /* assume `fheaders` has enough space  */
     for (ret = 0; ret < nfiles; ret++) {
-        struct star_file_header tmp = {0};
+        struct StarFileHeader tmp = {0};
 
         /* wasnt able to read the fheader? */
         if (!star_read_fheader(&tmp, in))
@@ -317,7 +319,7 @@ out:
     return ret;
 }
 
-u64 star_read_fdata (struct star_file * self, Stream * in)
+u64 star_read_fdata (struct STAR * self, Stream * in)
 {
     u64 ret = 0;
 
@@ -348,16 +350,16 @@ out:
     return ret;
 }
 
-struct star_file * star_read (Stream * in)
+struct STAR * star_read (Stream * in)
 {
-    struct star_file * ret = NULL;
-    struct star_file tmp = {0};
+    struct STAR * ret = NULL;
+    struct STAR tmp = {0};
 
     /* failed to read header or `in` is not a STAR file */
     ifjmp(!star_read_header(&tmp, in), out);
 
     { /* allocate and copy the already read data */
-        ret = malloc(sizeof(struct star_file));
+        ret = malloc(sizeof(struct STAR));
         ifjmp(ret == NULL, out);
         *ret = tmp;
     }
@@ -416,32 +418,34 @@ ko_fheaders:
 /*
  * define functions to write specific unsigned integer types
  */
+_star_make_write_fun(star_write_u8, u8);
+_star_make_write_fun(star_write_u32, u32);
 _star_make_write_fun(star_write_u64, u64);
 
 #define star_write_u8_single(IN, OUT, SIZE) \
         (stream_write((OUT), (IN), (SIZE), 1) == 1)
 
-bool star_write_header (const struct star_file * self, Stream * out)
+bool star_write_header (const struct STAR * self, Stream * out)
 {
     if (self == NULL || out == NULL)
         return false;
 
     return star_write_u8_single(STAR_MAGIC, out, sizeof(STAR_MAGIC))
-        && star_write_u64(&self->header.nfiles, out, 1);
+        && star_write_u32(&self->header.nfiles, out, 1);
 }
 
-bool star_write_fheader (const struct star_file_header * fh, Stream * out)
+bool star_write_fheader (const struct StarFileHeader * fh, Stream * out)
 {
     if (fh == NULL || out == NULL)
         return false;
 
-    return star_write_u64(&fh->size,      out, 1)
+    return star_write_u32(&fh->size,      out, 1)
         && star_write_u64(&fh->offset,    out, 1)
-        && star_write_u64(&fh->path_len,  out, 1)
+        && star_write_u8(&fh->path_len,   out, 1)
         && star_write_u8_single(fh->path, out, fh->path_len);
 }
 
-bool star_write_fheaders (const struct star_file * self, Stream * out)
+bool star_write_fheaders (const struct STAR * self, Stream * out)
 {
     if (self == NULL || out == NULL)
         return false;
@@ -452,7 +456,7 @@ bool star_write_fheaders (const struct star_file * self, Stream * out)
     return ret;
 }
 
-bool star_write_fdata (const struct star_file * self, Stream * out)
+bool star_write_fdata (const struct STAR * self, Stream * out)
 {
     if (self == NULL || out == NULL || self->fheaders == NULL || self->fdata == NULL)
         return false;
@@ -464,7 +468,7 @@ bool star_write_fdata (const struct star_file * self, Stream * out)
     return ret;
 }
 
-bool star_write (const struct star_file * self, Stream * out)
+bool star_write (const struct STAR * self, Stream * out)
 {
     if (out == NULL || !star_check_header(self) || !_star_check_ptrs(self))
         return false;
@@ -477,16 +481,16 @@ bool star_write (const struct star_file * self, Stream * out)
 /***********************************************************
  * create functions
  **********************************************************/
-struct star_file * star_new (u64 nfiles)
+struct STAR * star_new (u32 nfiles)
 {
-    struct star_file * ret = NULL;
-    struct star_file tmp = {0};
+    struct STAR * ret = NULL;
+    struct STAR tmp = {0};
 
     ifjmp(nfiles == 0, out);
 
     bool res = ((tmp.fdata = calloc(nfiles, sizeof(u8 *))) != NULL)
-        && ((tmp.fheaders = calloc(nfiles, sizeof(struct star_file_header))) != NULL)
-        && ((ret = malloc(sizeof(struct star_file))) != NULL);
+        && ((tmp.fheaders = calloc(nfiles, sizeof(struct StarFileHeader))) != NULL)
+        && ((ret = malloc(sizeof(struct STAR))) != NULL);
 
     ifjmp(!res, ko);
 
@@ -513,11 +517,11 @@ ko:
     goto out;
 }
 
-bool star_add_file (struct star_file * self, u64 idx, const u8 * path, u64 size, Stream * in)
+bool star_add_file (struct STAR * self, u32 idx, const u8 * path, u32 size, Stream * in)
 {
     bool ret = false;
     u8 * fdata = NULL;
-    struct star_file_header fheader = {0};
+    struct StarFileHeader fheader = {0};
 
     ifjmp(self == NULL, out);
     ifjmp(in == NULL, out);
@@ -559,10 +563,10 @@ ko:
 }
 
 /*
- * assume self is a complete `struct star_file`, ready to
+ * assume self is a complete `struct STAR`, ready to
  * write, except for the file offsets
  */
-bool star_file_offsets (struct star_file * self)
+bool star_file_offsets (struct STAR * self)
 {
     if (self == NULL)
         return false;
@@ -574,8 +578,8 @@ bool star_file_offsets (struct star_file * self)
      * beggining of stored files' data
      */
     {
-        offset += sizeof(struct star_header);
-        offset += self->header.nfiles * sizeof(struct star_file_header);
+        offset += sizeof(struct StarHeader);
+        offset += self->header.nfiles * sizeof(struct StarFileHeader);
 
         /* add path length */
         for (u64 i = 0; i < self->header.nfiles; i++)
@@ -596,7 +600,7 @@ bool star_file_offsets (struct star_file * self)
 /***********************************************************
  * search functions
  **********************************************************/
-u64 star_search (const struct star_file * self, const u8 * fname)
+u64 star_search (const struct STAR * self, const u8 * fname)
 {
     bool match = false;
     u64 ret = 0;
@@ -608,7 +612,7 @@ u64 star_search (const struct star_file * self, const u8 * fname)
     size_t fl = strlen((void *) fname);
 
     for (ret = 0; ret < self->header.nfiles && !match; ret++) {
-        u64 n = self->fheaders[ret].path_len - 1;
+        u8 n = self->fheaders[ret].path_len - 1;
         match = (n == fl)
             &&  (strncmp((void *) fname,
                         (void *) self->fheaders[ret].path, n) == 0);
@@ -629,12 +633,12 @@ out:
 static int _star_compar_path (const void * path, const void * fh)
 {
     return (path != NULL && fh != NULL) ?
-        star_strcmp(path, ((const struct star_file_header *) fh)->path) :
+        star_strcmp(path, ((const struct StarFileHeader *) fh)->path) :
         0 ;
 }
 
 /* FIXME: Wrong matches, sometimes SEGV */
-u64 star_bsearch (const struct star_file * self, const u8 * fname)
+u64 star_bsearch (const struct STAR * self, const u8 * fname)
 {
     u64 ret = STAR_DNF;
 
@@ -643,10 +647,10 @@ u64 star_bsearch (const struct star_file * self, const u8 * fname)
     ifjmp(fname == NULL, out);
 
     const void * key = fname;
-    const struct star_file_header * base = self->fheaders;
+    const struct StarFileHeader * base = self->fheaders;
     size_t nmemb = self->header.nfiles;
-    size_t size = sizeof(struct star_file_header);
-    const struct star_file_header * match = bsearch(key, base, nmemb, size, _star_compar_path);
+    size_t size = sizeof(struct StarFileHeader);
+    const struct StarFileHeader * match = bsearch(key, base, nmemb, size, _star_compar_path);
 
     ret = (match != NULL) ?
         (u64) (match - base) :

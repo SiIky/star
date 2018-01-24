@@ -43,9 +43,9 @@
 #define eprintf(MSG, ...)   (fprintf(stderr, MSG "\n", __VA_ARGS__))
 #define errprintf(MSG, ...) (fprintf(stderr, MSG ": %s\n", __VA_ARGS__, strerror(errno)))
 
-u64 fsize (FILE * stream)
+u32 fsize (FILE * stream)
 {
-    u64 ret = 0;
+    u32 ret = 0;
 
     ifjmp(stream == NULL, out);
 
@@ -83,17 +83,17 @@ int create (int _n, char ** args)
     Stream out = {0};
     Stream in = {0};
 
-    u64 n = (u64) _n; /* `_n > 0` */
-    struct star_file * star = star_new(n - 1);
+    u32 n = (u32) _n; /* `_n > 0` */
+    struct STAR * star = star_new(n - 1);
     ifjmp(star == NULL, out);
 
-    for (u64 i = 1; i < n; i++) {
+    for (u32 i = 1; i < n; i++) {
         if (!stream_from_file(&in, fopen(args[i], "rb"))) {
             errprintf("Error opening `%s`", args[i]);
             goto out;
         }
 
-        u64 size = fsize(stream_file(&in));
+        u32 size = fsize(stream_file(&in));
         eprintf("Archiving `%s`", args[i]);
 
         if (!star_add_file(star, i - 1, (void *) args[i], size, &in)) {
@@ -153,7 +153,7 @@ int extract (int n, char ** args)
         return EXIT_FAILURE;
     }
 
-    struct star_file * star = star_read(&in);
+    struct STAR * star = star_read(&in);
     stream_close(&in);
     if (star == NULL) {
         eprintf("Error occurred reading `%s`", args[0]);
@@ -193,7 +193,7 @@ int list (int n, char ** args)
             continue;
         }
 
-        struct star_file * star = star_read(&in);
+        struct STAR * star = star_read(&in);
         stream_close(&in);
 
         if (star == NULL) {
@@ -204,7 +204,7 @@ int list (int n, char ** args)
 
         printf("%s:\n", args[i]);
         for (u64 idx = 0; idx < star->header.nfiles; idx++)
-            printf("\t`%s` (%" PRIu64 " B)\n",
+            printf("\t`%s` (%" PRIu32 " B)\n",
                     star->fheaders[idx].path,
                     star->fheaders[idx].size);
 
