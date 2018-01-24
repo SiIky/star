@@ -59,7 +59,7 @@ struct star_file_header {
     /** Offset from the beggining of the STAR to the beggining of the file */
     u64 offset;
     /** Number of bytes of the path/filename, including terminating `NULL` byte */
-    u64 path_len; /* including terminating '\0' */
+    u64 path_len;
     /** Path/filename of the file (no encoding assumed, just a sequence of bytes) */
     u8 * path;
 };

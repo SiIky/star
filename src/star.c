@@ -230,12 +230,12 @@ void star_free (struct star_file * self)
         return true;                                          \
     ko:                                                       \
         return false;                                         \
-    }
+    } bool name (type * out, Stream * in, u64 nmemb)
 
 /*
  * define functions to read specific unsigned integer types
  */
-_star_make_read_fun(star_read_u64, u64)
+_star_make_read_fun(star_read_u64, u64);
 
 /* read SIZE bytes from OUT int IN, as if they were a single unit */
 #define star_read_u8_single(OUT, IN, SIZE) \
@@ -411,93 +411,67 @@ ko_fheaders:
         return true;                                           \
     ko:                                                        \
         return false;                                          \
-    }
+    } bool name (const type * in, Stream * out, u64 nmemb)
 
 /*
  * define functions to write specific unsigned integer types
  */
-_star_make_write_fun(star_write_u64, u64)
+_star_make_write_fun(star_write_u64, u64);
 
 #define star_write_u8_single(IN, OUT, SIZE) \
         (stream_write((OUT), (IN), (SIZE), 1) == 1)
 
 bool star_write_header (const struct star_file * self, Stream * out)
 {
-    bool ret = false;
+    if (self == NULL || out == NULL)
+        return false;
 
-    ifjmp(self == NULL, ko);
-    ifjmp(out == NULL, ko);
-
-    ret =  star_write_u8_single(STAR_MAGIC, out, sizeof(STAR_MAGIC))
+    return star_write_u8_single(STAR_MAGIC, out, sizeof(STAR_MAGIC))
         && star_write_u64(&self->header.nfiles, out, 1);
-
-ko:
-    return ret;
 }
 
 bool star_write_fheader (const struct star_file_header * fh, Stream * out)
 {
-    bool ret = false;
+    if (fh == NULL || out == NULL)
+        return false;
 
-    ifjmp(fh == NULL, ko);
-    ifjmp(out == NULL, ko);
-
-    ret =  star_write_u64(&fh->size,      out, 1)
+    return star_write_u64(&fh->size,      out, 1)
         && star_write_u64(&fh->offset,    out, 1)
         && star_write_u64(&fh->path_len,  out, 1)
         && star_write_u8_single(fh->path, out, fh->path_len);
-
-ko:
-    return ret;
 }
 
 bool star_write_fheaders (const struct star_file * self, Stream * out)
 {
-    bool ret = false;
+    if (self == NULL || out == NULL)
+        return false;
 
-    ifjmp(self == NULL, ko);
-    ifjmp(out == NULL, ko);
-
-    ret = true;
+    bool ret = true;
     for (u64 i = 0; i < self->header.nfiles && ret; i++)
         ret = star_write_fheader(self->fheaders + i, out);
-
-ko:
     return ret;
 }
 
 bool star_write_fdata (const struct star_file * self, Stream * out)
 {
-    bool ret = false;
+    if (self == NULL || out == NULL || self->fheaders == NULL || self->fdata == NULL)
+        return false;
 
-    ifjmp(self == NULL, ko);
-    ifjmp(out == NULL, ko);
-    ifjmp(self->fheaders == NULL, ko);
-    ifjmp(self->fdata == NULL, ko);
-
-    ret = true;
+    bool ret = true;
     for (u64 i = 0; i < self->header.nfiles && ret; i++)
         ret = star_write_u8_single(self->fdata[i], out,
                 self->fheaders[i].size);
-
-ko:
     return ret;
 }
 
 bool star_write (const struct star_file * self, Stream * out)
 {
-    bool ret = false;
+    if (out == NULL || !star_check_header(self) || !_star_check_ptrs(self))
+        return false;
 
-    ifjmp(out == NULL, ko);
-    ifjmp(!star_check_header(self), ko);
-    ifjmp(!_star_check_ptrs(self), ko);
-
-    ret =  star_write_header(self,   out)
+    return star_write_header(self,   out)
         && star_write_fheaders(self, out)
         && star_write_fdata(self,    out);
-
-ko:
-    return ret;
 }
 
 /***********************************************************
